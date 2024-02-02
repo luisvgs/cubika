@@ -14,12 +14,12 @@ newtype TypeError = TypeError String
   deriving Show
 
 data Term =
-  -- TmTrue
-  -- | TmFalse
-  -- | TyBool
-  -- | TmInt Integer
-  -- | TyInt
-   TmVar String
+  TmTrue
+  | TmFalse
+  | TmInt Integer
+  | TyBool
+  | TyInt
+  | TmVar String
   | TmAbs String Type Term -- corresponds to @\x : ty. t@.
   | Pi String Type Type
   | TmApp Term Term
@@ -31,10 +31,10 @@ data Kinds = Star | Box deriving (Show, Eq)
 type Type = Term
 
 freeVars :: Term -> Set String
-freeVars (TmVar s    ) = Set.singleton s
--- freeVars TmTrue        = Set.empty
--- freeVars TmFalse       = Set.empty
--- freeVars (TmInt _    ) = Set.empty
+freeVars (TmVar s)     = Set.singleton s
+freeVars TmTrue        = Set.empty
+freeVars TmFalse       = Set.empty
+freeVars (TmInt _    ) = Set.empty
 freeVars (TmApp f a  ) = freeVars f `Set.union` freeVars a
 freeVars (TmAbs i t e) = freeVars t `Set.union` freeVars e
 freeVars (Pi    i k t) = freeVars k `Set.union` freeVars t
@@ -71,9 +71,9 @@ idt = Pi "a" (Kind Star) $ Pi "x" (TmVar "a") (TmVar "a")
 type Context = Map String Type
 
 typeOf :: Context -> Term -> Either TypeError Type
--- typeOf ctx TmTrue    = Right TyBool
--- typeOf ctx TmFalse   = Right TyBool
--- typeOf ctx (TmInt n) = Right TyInt
+typeOf ctx TmTrue    = Right TyBool
+typeOf ctx TmFalse   = Right TyBool
+typeOf ctx (TmInt n) = Right TyInt
 typeOf ctx (TmVar v) = case Map.lookup v ctx of
   Just ty -> Right ty
   Nothing -> Left $ TypeError v
@@ -106,8 +106,6 @@ typeOf ctx (Pi x a b ) = do
   s <- tCheckRed ctx a
   let r' = Map.insert x a ctx
   t <- tCheckRed r' b
-  trace ("Type of 't': " ++ show t) $ return ()
-  trace ("Type of 's': " ++ show s) $ return ()
   when ((s, t) `notElem` allowedKinds)
     $  Left
     $  TypeError
@@ -204,11 +202,11 @@ initialEnv = Map.fromList
   [("Nat", Kind Star), ("A", Kind Star), ("B", Pi "x" (TmVar "A") (Kind Star))]
 
 pretty :: Type -> String
--- pretty TmFalse      = "Bool"
--- pretty TmTrue       = "Bool"
--- pretty TyBool       = "Bool"
--- pretty (TmInt _)    = "Int"
--- pretty TyInt        = "Int"
+pretty TmFalse      = "Bool"
+pretty TmTrue       = "Bool"
+pretty TyBool       = "Bool"
+pretty (TmInt _)    = "Int"
+pretty TyInt        = "Int"
 pretty (Pi s t1 t2) = "Pi " ++ s ++ ":" ++ pretty t1 ++ " . " ++ pretty t2
 pretty (Kind Star ) = "*"
 pretty (Kind Box  ) = "⬛"
