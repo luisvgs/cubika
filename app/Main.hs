@@ -15,8 +15,12 @@ import qualified Text.Megaparsec.Char.Lexer    as L
 data Expr = Var String
           | IntLit Integer
           | BoolLit Bool
-          | Assign String Expr
           deriving (Show)
+
+data Stmt =
+  Seq [Stmt]
+  | Assign String Stmt
+  | ExprStmt Expr deriving (Show)
 
 -- Define the parser type
 type Parser = Parsec Void String
@@ -51,17 +55,15 @@ identifier = (lexeme . try) (p >>= check)
     else return x
 
 integer :: Parser Expr
-integer = do
-  value <- some digitChar
-  return (IntLit (read value))
+integer = IntLit <$> lexeme L.decimal
 
 boolean :: Parser Expr
 boolean = do
-  value <- choice [string "True", string "False"]
-  return (BoolLit (read value))
+  value <- choice [rword "True" *> pure True, rword "False" *> pure False]
+  return (BoolLit value)
 
 -- Parser for variable assignments
-assignment :: Parser Expr
+assignment :: Parser Stmt
 assignment = do
   rword "let"
   name <- identifier
@@ -69,19 +71,34 @@ assignment = do
   char '='
   space
   expr <- exprParser
-  return (Assign name expr)
+  return (Assign name (ExprStmt expr))
 
--- Expression parser
+
+stmtSeq :: Parser Stmt
+stmtSeq = f <$> sepBy1 stmt semicolon
+  -- if there's only one stmt return it without using ‘Seq’
+  where f l = if length l == 1 then head l else Seq l
+
+stmt :: Parser Stmt
+stmt = choice
+  [ Seq <$> between (symbol "{") (symbol "}") (stmt `sepEndBy` semicolon)
+  , assignment
+  , ExprStmt <$> exprParser
+  ]
+
+-- stmt :: Parser Stmt
+-- stmt = assignment <|> stmtSeq <|> ExprStmt <$> exprParser
+
 exprParser :: Parser Expr
-exprParser = integer <|> boolean <|> assignment
+exprParser = integer <|> boolean
 
-run :: Parser Expr -> String -> Either (ParseErrorBundle String Void) Expr
+run :: Parser Stmt -> String -> Either (ParseErrorBundle String Void) Stmt
 run parser = parse parser ""
 
 -- main :: IO ()
 -- main = getLine >>= print . run >> main
 main = do
   input <- getLine
-  case run exprParser input of
+  case run stmt input of
     Left  err  -> putStrLn $ "Parse error: " ++ errorBundlePretty err
     Right expr -> putStrLn $ "Parsed expression: " ++ show expr
