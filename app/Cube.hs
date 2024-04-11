@@ -1,4 +1,5 @@
 module Cube where
+import           Ast
 import           Control.Monad                  ( when )
 import           Control.Monad.State
 import           Data.Either                    ( fromRight )
@@ -13,25 +14,8 @@ import           Debug.Trace                    ( trace )
 newtype TypeError = TypeError String
   deriving Show
 
-data Term =
-  TmTrue
-  | TmFalse
-  | TmInt Integer
-  | TyBool
-  | TyInt
-  | TmVar String
-  | TmAbs String Type Term -- corresponds to @\x : ty. t@.
-  | Pi String Type Type
-  | TmApp Term Term
-  | Kind Kinds
-  deriving(Show, Eq)
-
-data Kinds = Star | Box deriving (Show, Eq)
-
-type Type = Term
-
 freeVars :: Term -> Set String
-freeVars (TmVar s)     = Set.singleton s
+freeVars (Var s)       = Set.singleton s
 freeVars TmTrue        = Set.empty
 freeVars TmFalse       = Set.empty
 freeVars (TmInt _    ) = Set.empty
@@ -46,14 +30,12 @@ freeVars (Kind _     ) = Set.empty
 tmId :: Term
 -- tmId = TmAbs "a" (Kind Star) $ TmAbs "x" (TmVar "a") (TmVar "x")
 -- \x : Type . x : Type
-tmId = TmAbs "x" (Kind Star) $ TmVar "x"
+tmId = TmAbs "x" (Kind Star) $ Var "x"
 
 -- \f : Nat -> Nat . \z : Nat. z
 zero :: Term
 zero =
-  TmAbs "f" (TmAbs "a" (Kind Star) $ TmVar "a")
-    $ TmAbs "z" (TmVar "Nat")
-    $ TmVar "z"
+  TmAbs "f" (TmAbs "a" (Kind Star) $ Var "a") $ TmAbs "z" (Var "Nat") $ Var "z"
 
 -- \ f : Nat . \z . f z
 -- succ :: Term
@@ -62,56 +44,75 @@ zero =
 
 --Πx:*. B x
 dft :: Term
-dft = Pi "x" (TmVar "A") (TmApp (TmVar "B") (TmVar "x"))
+dft = Pi "x" (Var "A") (TmApp (Var "B") (Var "x"))
 
 --Πa:*.Πx:a.a
-id' = TmAbs "a" (Kind Star) $ TmAbs "x" (TmVar "a") (TmVar "x")
-idt = Pi "a" (Kind Star) $ Pi "x" (TmVar "a") (TmVar "a")
+id' = TmAbs "a" (Kind Star) $ TmAbs "x" (Var "a") (Var "x")
+idt = Pi "a" (Kind Star) $ Pi "x" (Var "a") (Var "a")
 
 type Context = Map String Type
 
-typeOf :: Context -> Term -> Either TypeError Type
-typeOf ctx TmTrue    = Right TyBool
-typeOf ctx TmFalse   = Right TyBool
-typeOf ctx (TmInt n) = Right TyInt
-typeOf ctx (TmVar v) = case Map.lookup v ctx of
-  Just ty -> Right ty
+extendContext :: String -> Type -> Context -> Context
+extendContext v t c = Map.insert v t c
+
+-- typeOfStmt :: Context -> Stmt -> Either TypeError (Stmt, Type)
+
+typeOf :: Context -> Term -> Either TypeError (Term, Type)
+typeOf ctx b@TmTrue         = Right (b, TyBool)
+typeOf ctx b@TmFalse        = Right (b, TyBool)
+typeOf ctx b@(BoolLit b'  ) = Right (b, TyBool)
+typeOf ctx i@(TmInt   n   ) = Right (i, TyInt)
+typeOf ctx a@(Assign v t e) = do
+  -- TODO: check if t has form of A, B, U, etc
+  u <- typeOf ctx t
+  let (_, u') = u
+  e_ <- typeOf ctx e
+  let (_, t') = e_
+  let _       = extendContext v t ctx
+  -- when (t /= t') $ Left $ TypeError $ "Types are not equal: " ++ show (t, t')
+  return (a, u')
+typeOf ctx x@(Var v) = case Map.lookup v ctx of
+  Just ty -> Right (x, ty)
   Nothing -> Left $ TypeError v
-typeOf ctx (TmAbs x ty t) = do
+typeOf ctx e@(TmAbs x ty t) = do
   _ <- typeOf ctx ty
   let ctx' = Map.insert x ty ctx
-  ty' <- typeOf ctx' t
-  let lt = Pi x ty ty'
+  ty_ <- typeOf ctx' t
+  let (_, ty') = ty_
+  let lt       = Pi x ty ty'
   _ <- typeOf ctx lt
-  return $ lt
-typeOf ctx (TmApp t1 t2) = do
+  return (e, lt)
+typeOf ctx e@(TmApp t1 t2) = do
   -- Typechek t1 in the context
-  ty1 <- typeOf ctx t1
+  ty1' <- typeOf ctx t1
+  let (_, ty1) = ty1'
   case ty1 of
     -- (Π a:x . B) y
     -- at: argument type
     -- rt: return type
     Pi x at rt -> do
       -- Typechek t2 in the context
-      ta <- typeOf ctx t2
+      ta' <- typeOf ctx t2
+      let (_, ta) = ta'
       -- (betaEq x y)?
       -- "Since types can now be arbitrary expression
       -- we use betaEq to compare them instead of (==).""
       unless (betaEq ta at) $ Left $ TypeError "Bad function arguments"
-      Right $ subst x t2 rt
+      Right $ (e, subst x t2 rt)
     _ -> Left $ TypeError "Non-function in application"
-typeOf _   (Kind Star) = return $ Kind Box
-typeOf _   (Kind Box ) = Left $ TypeError "Found box"
-typeOf ctx (Pi x a b ) = do
+typeOf _   k@( Kind Star) = return $ (k, Kind Box)
+typeOf _   (   Kind Box ) = Left $ TypeError "Found box"
+typeOf ctx pi@(Pi x a b ) = do
   s <- tCheckRed ctx a
   let r' = Map.insert x a ctx
   t <- tCheckRed r' b
+  trace ("current" ++ show (s, t)) (return ())
   when ((s, t) `notElem` allowedKinds)
     $  Left
     $  TypeError
     $  "Bad abstraction"
     ++ show (s, t)
-  return t
+  return (pi, t)
 
 allowedKinds :: [(Type, Type)]
 allowedKinds =
@@ -122,7 +123,10 @@ allowedKinds =
   ]
 
 -- Type checks and normalizes the result.
-tCheckRed r e = fmap whnf (typeOf r e)
+tCheckRed r e = do
+  (_, t) <- typeOf r e
+  return (whnf e)
+
 whnf :: Term -> Term
 whnf ee = spine ee []
  where
@@ -130,33 +134,10 @@ whnf ee = spine ee []
   spine (TmAbs s _ e) (a : as) = spine (subst s a e) as
   spine f             as       = foldl TmApp f as
 
--- subst :: String -> Type -> Type -> Type
--- subst x ty' TmFalse    = TyBool
--- subst x ty' TmTrue     = TyBool
--- subst x ty' (TmInt _ ) = TyInt
--- subst x ty' (Kind  k ) = Kind k
--- subst x ty' (Pi i t e) = abstr Pi i t e
---  where
---   cloneSym e i = loop i
---    where
---     fvx = freeVars ty'
---     loop i' = if i' `elem` vars then loop (i ++ "'") else i'
-    -- vars = fvx ++ Set.toList (freeVars e)
---   abstr con i t e = if v == i
---     then con i (sub t) e
---     else if i `elem` fvx
---       then
---         let i' = cloneSym e i
---             e' = subst i i' e
---         in  con i' (subst t) (sub e')
---       else con i (sub t) (sub e)
--- subst x ty' (TmApp ty1 ty2) = TmApp (subst x ty' ty1) (subst x ty' ty2)
--- subst x ty' (TmVar y) | x == y    = ty'
---                       | otherwise = TmVar y
 subst :: String -> Term -> Term -> Term
 subst v x = sub
  where
-  sub e@(TmVar i    ) = if i == v then x else e
+  sub e@(Var i      ) = if i == v then x else e
   sub (  TmApp f a  ) = TmApp (sub f) (sub a)
   sub (  TmAbs i t e) = abstr TmAbs i t e
   sub (  Pi    i t e) = abstr Pi i t e
@@ -189,17 +170,13 @@ nf ee = spine ee []
   app f as = foldl TmApp f (map nf as)
 
 alphaEq :: Term -> Term -> Bool
-alphaEq (TmVar v    ) (TmVar v'     ) = v == v'
+alphaEq (Var v      ) (Var v'       ) = v == v'
 alphaEq (TmApp f a  ) (TmApp f' a'  ) = alphaEq f f' && alphaEq a a'
 alphaEq (TmAbs s _ e) (TmAbs s' _ e') = alphaEq e (substVar s' s e')
 alphaEq _             _               = False
 
 substVar :: String -> String -> Term -> Term
-substVar s s' = subst s (TmVar s')
-
-initialEnv :: Context
-initialEnv = Map.fromList
-  [("Nat", Kind Star), ("A", Kind Star), ("B", Pi "x" (TmVar "A") (Kind Star))]
+substVar s s' = subst s (Var s')
 
 pretty :: Type -> String
 pretty TmFalse      = "Bool"
