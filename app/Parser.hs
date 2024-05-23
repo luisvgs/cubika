@@ -19,7 +19,7 @@ type Parser = Parsec Void String
 type Sym = String
 
 spaces :: Parser ()
-spaces = L.space (void spaceChar) lineCmnt blockCmnt
+spaces = L.space space1 lineCmnt blockCmnt
   where
     lineCmnt = L.skipLineComment "//"
     blockCmnt = L.skipBlockComment "/*" "*/"
@@ -37,12 +37,12 @@ rword :: String -> Parser ()
 rword w = string w *> notFollowedBy alphaNumChar *> spaces
 
 rws :: [String] -- list of reserved words
-rws = ["true", "false", "not", "and", "or", "let", "assume", "in", "forall"]
+rws = ["true", "false", "not", "and", "or", "let", "assume", "in", "forall", "_", "Type"]
 
 identifier :: Parser String
 identifier = (lexeme . try) (p >>= check)
   where
-    p = (:) <$> letterChar <*> many alphaNumChar
+    p = (:) <$> letterChar <*> many (alphaNumChar <|> char '_')
     check x =
         if x `elem` rws
             then fail $ "keyword " ++ show x ++ " cannot be an identifier"
@@ -53,108 +53,93 @@ integer = TmInt <$> lexeme L.decimal
 
 boolean :: Parser Term
 boolean = do
-    value <- choice [rword "True" *> pure True, rword "False" *> pure False]
-    return (BoolLit value)
+    value <- choice [rword "true" *> pure True, rword "false" *> pure False]
+    return (Kind Star)
 
 parseType :: Parser Term
-parseType = exprParser
+parseType = try pPi <|> pAExpr
 
 pLet :: Parser Term
 pLet = do
     rword "let"
-    stes <- sepBy pBind  (schar ';')
-    optional (schar ';')
-    rword "in"
-    b <-  exprParser
+    stes <- sepBy pBind semicolon
+    optional semicolon
+    optional (rword "in")
+    b <- exprParser
     return $ eLets' stes b
 
-pBind :: Parser (Sym, Type, Maybe Term) -- FIXME
-pBind = try pBindH <|> pBindR
+pBind :: Parser (Sym, Term, Maybe Term)
+pBind = try pBindH <|> try pBindR
 
-
-schar :: Char -> Parser ()
-schar c = do
-    spaces
-    char c
-    return ()
-
-pBindH :: Parser (Sym, Type, Maybe Term)
+pBindH :: Parser (Sym, Term, Maybe Term)
 pBindH = do
-    sy <- dbg "pBindH" identifier
-    lexeme (symbol "::")
-    spaces
+    sy <- identifier
+    lexeme (symbol ":")
     ty <- parseType
-    char ';'
-    spaces
+    semicolon
     sy' <- identifier
     as <- many identifier
-    char '=' -- Esta cayendo mal
+    char '='
     b <- exprParser
     e <- matchH ty as b
     if sy /= sy' then
-        error "oh no"
+        fail "Identifiers do not match"
     else return (sy, ty, Just e)
 
-
-pBindR :: Parser (Sym, Type, Maybe Term)
+pBindR :: Parser (Sym, Term, Maybe Term)
 pBindR = do
     let addT (s, t) r = Pi s t r
         addE (s, t) e = TmAbs s t e
-    sy <- dbg "pBindH" identifier
-    args <- many pArg -- (a :: A) .. (b :: B)
-    spaces
-    symbol "::"
+    sy <- identifier
+    args <- many pArg
+    symbol ":"
     rt <- parseType
-    spaces
+    trace (show "bindR") (return ())
+    trace (show "parsed type: " ++ show rt) (return ())
     (do
         char '='
         spaces
+        trace (show "ehm? ") (return ())
         be <- exprParser
         spaces
         return (sy, foldr addT rt args, Just $ foldr addE be args)
      ) <|>
-       (return (sy, foldr addT rt args, Nothing))
+        return  (sy, foldr addT rt args, Nothing)
 
 matchH :: Term -> [Sym] -> Term -> Parser Term
 matchH _ [] e = return e
 matchH (Pi v t t') (a:as) e | v == a || v == "_" = do
     e' <- matchH t' as e
     return (TmAbs a t e')
-matchH _ _ _ = error "ups"
+matchH _ _ _ = fail "Mismatch in matchH"
 
-
-eLet' :: (Sym, Type, Maybe Term) -> Term -> Term
+eLet' :: (Sym, Term, Maybe Term) -> Term -> Term
 eLet' (s, t, Nothing) b = TmAbs s t b
 eLet' (s, t, Just e) b  = Let s t e b
 
-eLets' :: [(Sym, Type, Maybe Term)] -> Term -> Term
+eLets' :: [(Sym, Term, Maybe Term)] -> Term -> Term
 eLets' stes b = foldr eLet' b stes
 
-pArg :: Parser (Sym, Type) -- (a :: A) .. (b :: B)
+pArg :: Parser (Sym, Term)
 pArg = pParen pVarType
 
-pVarType :: Parser (Sym, Type) -- a :: A
+pVarType :: Parser (Sym, Term)
 pVarType = do
     s <- identifier
-    symbol "::"
-    spaces
+    symbol ":"
     t <- parseType
-    spaces
     return (s, t)
 
 pParen :: Parser a -> Parser a
 pParen = between (symbol "(") (symbol ")")
 
--- exprParser :: Parser Term
--- exprParser = pAExpr <|> integer <|> boolean <|> pPi <|> pLet
-
 exprParser :: Parser Term
-exprParser = try pLet <|> try pPi <|> try pApply <|> try pAtomExpr <|> integer <|> boolean
+exprParser = try pLet <|> try pPi <|> try pLam <|> try pApply <|> try pAtomExpr
 
 pPi :: Parser Term
-pPi = pPiQuant <|> pPiArrow
+pPi = try pPiQuant <|> pPiArrow
 
-pPiQuant :: Parser Term -- forall
+pPiQuant :: Parser Term
 pPiQuant = do
     rword "forall"
     sts <- some (pParen pVarType)
@@ -164,27 +149,38 @@ pPiQuant = do
     return $ foldr (uncurry Pi) e sts
 
 pPiArrow :: Parser Term
-pPiArrow  = do
-    ts <- some (do { e <- pPiArg; string "->"; return e })
-    trace (show ts) (return ())
-    rt <- pAExpr
+pPiArrow = do
+    ts <- some (try pPiArg <|> pParenArg)
+    symbol "->"
+    rt <- parseType
+    spaces
     return $ foldr (\(s, t) r -> Pi s t r) rt ts
-    where
-        pPiArg = pPiNoDep <|> pArg
-        pPiNoDep = do
-            t <- pAExpr
-            return ("_", t)
+  where
+    pPiArg = pArg
+    pParenArg = do
+        t <- pAExpr
+        return ("_", t)
+
+pLam :: Parser Term
+pLam = do
+    char '\\'
+    sts <- fmap (:[]) pVarType <|> many (pParen pVarType)
+    string "->"
+    e <- exprParser
+    return $ foldr (uncurry TmAbs) e sts
 
 pAExpr :: Parser Term
-pAExpr = pApply <|> pAtomExpr
+pAExpr = try pApply <|> pAtomExpr
 
 pAtomExpr :: Parser Term
-pAtomExpr = variable <|> pParen exprParser
+pAtomExpr = variable <|> parseKind <|> pParen exprParser <|> integer <|> boolean
+
+parseKind :: Parser Term
+parseKind = do
+    (do rword "Type"; return $ Kind Star) <|> (do string "[]"; return $ Kind Box)
 
 variable :: Parser Term
-variable = do
-    s <- identifier
-    return (Var s)
+variable = Var <$> identifier
 
 pApply :: Parser Term
 pApply = do
@@ -192,12 +188,5 @@ pApply = do
     as <- some pAtomExpr
     return $ foldl TmApp f as
 
-parseTop :: Parser Term
-parseTop = do
-    e <- exprParser
-    optional spaces
-    return e
-
--- Define the parser type
 run :: Parser Term -> String -> Either (ParseErrorBundle String Void) Term
 run parser = parse parser ""

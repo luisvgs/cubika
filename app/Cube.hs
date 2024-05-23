@@ -26,61 +26,26 @@ freeVars (Let i t e b) = freeVars (expandLet i t e b)
 freeVars (Pi i k t)    = freeVars k `Set.union` freeVars t
 freeVars (Kind _)      = Set.empty
 
--- freeVars _             = Set.empty
-
--- Predefined terms
--- Pi \ a : * \ x : a . x
-tmId :: Term
--- tmId = TmAbs "a" (Kind Star) $ TmAbs "x" (TmVar "a") (TmVar "x")
--- \x : Type . x : Type
-tmId = TmAbs "x" (Kind Star) $ Var "x"
-
--- \f : Nat -> Nat . \z : Nat. z
-zero :: Term
-zero =
-    TmAbs "f" (TmAbs "a" (Kind Star) $ Var "a") $ TmAbs "z" (Var "Nat") $ Var "z"
-
--- \ f : Nat . \z . f z
--- succ :: Term
--- succ = TmAbs "f" (TmVar "Nat") $ TmAbs "x" ()
-
--- Πx:*. B x
-dft :: Term
-dft = Pi "x" (Var "A") (TmApp (Var "B") (Var "x"))
-
--- Πa:*.Πx:a.a
-id' = TmAbs "a" (Kind Star) $ TmAbs "x" (Var "a") (Var "x")
-idt = Pi "a" (Kind Star) $ Pi "x" (Var "a") (Var "a")
-
 type Context = Map String Type
 
 extendContext :: String -> Type -> Context -> Context
 extendContext = Map.insert
 
--- Assign "foo" TyBool (BoolLit True)
 typeOf :: Context -> Term -> Either TypeError (Term, Type)
 typeOf ctx b@TmTrue                                       = Right (b, TyBool)
 typeOf ctx b@TmFalse                                      = Right (b, TyBool)
 typeOf ctx b@TyBool                                       = Right (b, TyBool) -- This and the two above are abit inconsistent. Can be improved.
 typeOf ctx b@(BoolLit b')                                 = Right (b, TyBool)
 typeOf ctx i@(TmInt n)                                    = Right (i, TyInt)
-typeOf r (Let s t a e)                                    = do
-    typeOf r t
-    ta <- typeOf r a
+typeOf ctx (Let s t a e)                                    = do
+    typeOf ctx t
+    ta <- typeOf ctx a
     let (_, u)                                            = ta
     when (not (betaEq u t)) $ Left $ TypeError $ "Bad let def\n" ++ show (u, t)
-    te <- typeOf r (subst s a e)
+    te <- typeOf ctx (subst s a e)
     let (_, u')                                           = te
-    typeOf r (Pi s t u')
+    typeOf ctx (Pi s t u')
     return te
--- typeOf ctx a@(Let v t e)                               = do
---     u <- typeOf ctx t
---     let (_, u')                                        = u
---     e_ <- typeOf ctx e
---     let (_, t')                                        = e_
---     let _                                              = extendContext v t ctx
---     when (t /                                          = t') $ Left $ TypeError $ "Types are not equal: " ++ show (t, t')
---     return (a, u')
 typeOf ctx x@(Var v)                                      = case Map.lookup v ctx of
     Just ty -> Right (x, ty)
     Nothing -> Left $ TypeError (v ++ " " ++ "is not bound to any type.")
@@ -94,8 +59,7 @@ typeOf ctx e@(TmAbs x ty t)                               = do
     return (e, lt)
 typeOf ctx e@(TmApp t1 t2)                                = do
     -- Typechek t1 in the context
-    ty1' <- typeOf ctx t1
-    let (_, ty1)                                          = ty1'
+    ty1 <- tCheckRed ctx t1
     case ty1 of
         -- (Π a:x . B) y
         -- at: argument type
@@ -103,11 +67,17 @@ typeOf ctx e@(TmApp t1 t2)                                = do
         Pi x at rt -> do
             -- Typechek t2 in the context
             ta' <- typeOf ctx t2
+            trace ("typeOf ta " ++ show ta' ++ " ") (return ())
+            trace ("typeOf t2 " ++ show t2 ++ " ") (return ())
             let (_, ta)                                   = ta'
             -- (betaEq x y)?
             -- "Since types can now be arbitrary expression
             -- we use betaEq to compare them instead of ( ==).""
-            unless (betaEq ta at) $ Left $ TypeError "Bad function arguments"
+            unless (betaEq ta at) $ Left $ TypeError ("Bad function arguments. Function: "
+                                                      ++ show (nf t1) ++ " " ++
+                                                      "argument: " ++ show (nf t2) ++ " " ++
+                                                      "expected type: " ++ show at ++ " " ++
+                                                      "got type: " ++ show ta)
             Right $ (e, subst x t2 rt)
         _ -> Left $ TypeError "Non-function in application"
 typeOf _ k@(Kind Star)                                    = return $ (k, Kind Box)
@@ -156,6 +126,10 @@ subst v x = sub
     sub (TmApp f a) = TmApp (sub f) (sub a)
     sub (TmAbs i t e) = abstr TmAbs i t e
     sub (Pi i t e) = abstr Pi i t e
+    sub (TmInt n) = TmInt n
+    sub TyBool = Kind Star
+    sub (BoolLit b) = (Var "Bool")
+    sub (TyInt) = Kind Star
     sub (Let i t e b) =
         let TmApp (TmAbs i' t' b') e' = sub (expandLet i t e b)
          in Let i' t' e' b'
@@ -201,13 +175,3 @@ alphaEq _ _ = False
 
 substVar :: String -> String -> Term -> Term
 substVar s s' = subst s (Var s')
-
-pretty :: Type -> String
-pretty TmFalse      = "Bool"
-pretty TmTrue       = "Bool"
-pretty TyBool       = "Bool"
-pretty (TmInt _)    = "Int"
-pretty TyInt        = "Int"
-pretty (Pi s t1 t2) = "Pi " ++ s ++ ":" ++ pretty t1 ++ " . " ++ pretty t2
-pretty (Kind Star)  = "*"
-pretty (Kind Box)   = "⬛"
