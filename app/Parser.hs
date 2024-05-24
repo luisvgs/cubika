@@ -1,7 +1,7 @@
 module Parser where
 
-import           Ast                            (Kinds (..), Term (..),
-                                                 Type (..))
+import           Ast                            (Kinds (..), Pattern (..),
+                                                 Term (..), Type (..))
 import           Control.Monad                  (void)
 import           Control.Monad.Combinators.Expr
 import           Cube
@@ -37,7 +37,39 @@ rword :: String -> Parser ()
 rword w = string w *> notFollowedBy alphaNumChar *> spaces
 
 rws :: [String] -- list of reserved words
-rws = ["true", "false", "not", "and", "or", "let", "assume", "in", "forall", "_", "Type"]
+rws = ["true", "false", "not", "and", "or", "let", "match", "in", "forall", "_", "Type", "with"]
+
+parseMatch :: Parser Term
+parseMatch = do
+    rword "match"
+    expr <- exprParser
+    rword "with"
+    branches <- some parseBranches
+    return $ TmMatch expr branches
+
+parseBranches :: Parser (Pattern, Term)
+parseBranches = do
+    symbol "|"
+    pat <- parsePattern
+    spaces
+    lexeme(symbol "->")
+    expr <- exprParser
+    return $ (pat, expr)
+
+parsePattern :: Parser Pattern
+parsePattern =  try parseWildcard <|> try pPInt <|> try pPBool
+
+parseWildcard :: Parser Pattern
+parseWildcard = do
+    symbol "_"
+    return $ Wildcard
+-- Get rid of these:
+pPBool :: Parser Pattern
+pPBool = (rword "true" *> return (PBool True)) <|> (rword "false" *> return (PBool False))
+
+pPInt :: Parser Pattern
+pPInt = PInt <$> L.decimal
+
 
 identifier :: Parser String
 identifier = (lexeme . try) (p >>= check)
@@ -94,12 +126,10 @@ pBindR = do
     args <- many pArg
     symbol ":"
     rt <- parseType
-    trace (show "bindR") (return ())
-    trace (show "parsed type: " ++ show rt) (return ())
+    -- trace (show "bindR") (return ())
     (do
         char '='
         spaces
-        trace (show "ehm? ") (return ())
         be <- exprParser
         spaces
         return (sy, foldr addT rt args, Just $ foldr addE be args)
@@ -134,7 +164,7 @@ pParen :: Parser a -> Parser a
 pParen = between (symbol "(") (symbol ")")
 
 exprParser :: Parser Term
-exprParser = try pLet <|> try pPi <|> try pLam <|> try pApply <|> try pAtomExpr
+exprParser = try pLet <|> try pPi <|> try pLam <|> try pApply <|> try pAtomExpr <|> try parseMatch
 
 pPi :: Parser Term
 pPi = try pPiQuant <|> pPiArrow

@@ -10,12 +10,12 @@ type Environment = Map.Map String Type
 
 -- Predefined terms
 -- Pi \ a : * \ x : a . x
-idt = 
+-- idt =
 -- idt = TmAbs "a" (Kind Star) $ TmAbs "x" (Var "a") (Var "x")
 -- \x : Type . x : Type
-id' = TmAbs "x" (Kind Star) $ Var "x"
+-- id' = TmAbs "x" (Kind Star) $ Var "x"
 -- \f : Nat -> Nat . \z : Nat. z
-zero = TmAbs "f" (TmAbs "a" (Kind Star) $ Var "a") $ TmAbs "z" (Var "Nat") $ Var "z"
+-- zero = TmAbs "f" (TmAbs "a" (Kind Star) $ Var "a") $ TmAbs "z" (Var "Nat") $ Var "z"
 -- \ f : Nat . \z . f z
 -- succ :: Term
 -- succ = TmAbs "f" (TmVar "Nat") $ TmAbs "x" ()
@@ -36,20 +36,5 @@ initialEnv =
         [
          ("Bool", Kind Star),
          ("True", Var "Bool"),
-         ("False", Var "Bool"),
-         -- ("id", id'),
-         ("idt", idt)
-        -- , ("B", Pi "x" (Var "A") (Kind Star))
+         ("False", Var "Bool")
         ]
-
-
-
-
-
-
-
-
-
-
-
-

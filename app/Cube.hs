@@ -31,33 +31,34 @@ type Context = Map String Type
 extendContext :: String -> Type -> Context -> Context
 extendContext = Map.insert
 
-typeOf :: Context -> Term -> Either TypeError (Term, Type)
-typeOf ctx b@TmTrue                                       = Right (b, TyBool)
-typeOf ctx b@TmFalse                                      = Right (b, TyBool)
-typeOf ctx b@TyBool                                       = Right (b, TyBool) -- This and the two above are abit inconsistent. Can be improved.
-typeOf ctx b@(BoolLit b')                                 = Right (b, TyBool)
-typeOf ctx i@(TmInt n)                                    = Right (i, TyInt)
-typeOf ctx (Let s t a e)                                    = do
-    typeOf ctx t
-    ta <- typeOf ctx a
+typeof :: Context -> Term -> Either TypeError (Term, Type)
+typeof ctx b@TmTrue                                       = Right (b, TyBool)
+typeof ctx b@TmFalse                                      = Right (b, TyBool)
+typeof ctx b@TyBool                                       = Right (b, TyBool)
+typeof ctx b@(BoolLit b')                                 = Right (b, TyBool)
+typeof ctx i@(TmInt n)                                    = Right (i, TyInt)
+typeof ctx pm@(TmMatch _ _)                               = Right (pm, Kind TrustMe)
+typeof ctx (Let s t a e)                                  = do
+    typeof ctx t
+    ta <- typeof ctx a
     let (_, u)                                            = ta
     when (not (betaEq u t)) $ Left $ TypeError $ "Bad let def\n" ++ show (u, t)
-    te <- typeOf ctx (subst s a e)
+    te <- typeof ctx (subst s a e)
     let (_, u')                                           = te
-    typeOf ctx (Pi s t u')
+    typeof ctx (Pi s t u')
     return te
-typeOf ctx x@(Var v)                                      = case Map.lookup v ctx of
+typeof ctx x@(Var v)                                      = case Map.lookup v ctx of
     Just ty -> Right (x, ty)
     Nothing -> Left $ TypeError (v ++ " " ++ "is not bound to any type.")
-typeOf ctx e@(TmAbs x ty t)                               = do
-    _ <- typeOf ctx ty
+typeof ctx e@(TmAbs x ty t)                               = do
+    _ <- typeof ctx ty
     let ctx'                                              = Map.insert x ty ctx
-    ty_ <- typeOf ctx' t
+    ty_ <- typeof ctx' t
     let (_, ty')                                          = ty_
     let lt                                                = Pi x ty ty'
-    _ <- typeOf ctx lt
+    _ <- typeof ctx lt
     return (e, lt)
-typeOf ctx e@(TmApp t1 t2)                                = do
+typeof ctx e@(TmApp t1 t2)                                = do
     -- Typechek t1 in the context
     ty1 <- tCheckRed ctx t1
     case ty1 of
@@ -80,9 +81,9 @@ typeOf ctx e@(TmApp t1 t2)                                = do
                                                       "got type: " ++ show ta)
             Right $ (e, subst x t2 rt)
         _ -> Left $ TypeError "Non-function in application"
-typeOf _ k@(Kind Star)                                    = return $ (k, Kind Box)
-typeOf _ (Kind Box)                                       = Left $ TypeError "Found box"
-typeOf ctx pi@(Pi x a b)                                  = do
+typeof _ k@(Kind Star)                                    = return $ (k, Kind Box)
+typeof _ (Kind Box)                                       = Left $ TypeError "Found box"
+typeof ctx pi@(Pi x a b)                                  = do
     s <- tCheckRed ctx a
     let r'                                                = Map.insert x a ctx
     t <- tCheckRed r' b
@@ -92,7 +93,7 @@ typeOf ctx pi@(Pi x a b)                                  = do
                 "Bad abstraction"
                     ++ show (s, t)
     return (pi, t)
-typeOf ctx_ t                                             = trace ("Uncaught pattern here: " ++ show t) (return (t, t))
+typeof ctx_ t                                             = trace ("Uncaught pattern here: " ++ show t) (return (t, t))
 
 allowedKinds :: [(Type, Type)]
 allowedKinds =
@@ -104,7 +105,7 @@ allowedKinds =
 
 -- Type checks and normalizes the result.
 tCheckRed r e = do
-    let foo = typeOf r e
+    let foo = typeof r e
     (e', t) <- foo
     return (whnf t)
 
