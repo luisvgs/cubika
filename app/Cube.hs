@@ -67,7 +67,7 @@ typeof ctx e@(TmApp t1 t2)                                = do
         -- rt: return type
         Pi x at rt -> do
             -- Typechek t2 in the context
-            ta' <- typeOf ctx t2
+            ta' <- typeof ctx t2
             trace ("typeOf ta " ++ show ta' ++ " ") (return ())
             trace ("typeOf t2 " ++ show t2 ++ " ") (return ())
             let (_, ta)                                   = ta'
