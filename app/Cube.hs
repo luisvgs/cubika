@@ -129,8 +129,8 @@ subst v x = sub
     sub (Pi i t e) = abstr Pi i t e
     sub (TmInt n) = TmInt n
     sub TyBool = Kind Star
-    sub (BoolLit b) = (Var "Bool")
-    sub (TyInt) = Kind Star
+    sub (BoolLit b) = Var "Bool"
+    sub TyInt = Kind Star
     sub (Let i t e b) =
         let TmApp (TmAbs i' t' b') e' = sub (expandLet i t e b)
          in Let i' t' e' b'
