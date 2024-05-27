@@ -6,8 +6,6 @@ import qualified Data.Map as Map
 
 type Environment = Map.Map String Type
 
-
-
 -- Predefined terms
 -- Pi \ a : * \ x : a . x
 -- idt =
@@ -29,12 +27,11 @@ emptyEnv = Map.empty
 
 extend :: Environment -> String -> Term -> Environment
 extend env v t = Map.insert v t env
--- (x : bool . x) true
+
 initialEnv :: Context
 initialEnv =
     Map.fromList
         [
          ("Bool", Kind Star),
-         ("True", Var "Bool"),
-         ("False", Var "Bool")
+         ("Nat", Kind Star)
         ]

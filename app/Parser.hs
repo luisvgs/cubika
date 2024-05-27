@@ -37,7 +37,7 @@ rword :: String -> Parser ()
 rword w = string w *> notFollowedBy alphaNumChar *> spaces
 
 rws :: [String] -- list of reserved words
-rws = ["true", "false", "not", "and", "or", "let", "match", "in", "forall", "_", "Type", "with"]
+rws = ["not", "and", "or", "let", "match", "in", "forall", "_", "Type", "with", "False", "True"]
 
 parseMatch :: Parser Term
 parseMatch = do
@@ -65,7 +65,7 @@ parseWildcard = do
     return $ Wildcard
 -- Get rid of these:
 pPBool :: Parser Pattern
-pPBool = (rword "true" *> return (PBool True)) <|> (rword "false" *> return (PBool False))
+pPBool = (rword "True" *> return (PBool True)) <|> (rword "False" *> return (PBool False))
 
 pPInt :: Parser Pattern
 pPInt = PInt <$> L.decimal
@@ -85,8 +85,8 @@ integer = TmInt <$> lexeme L.decimal
 
 boolean :: Parser Term
 boolean = do
-    value <- choice [rword "true" *> pure True, rword "false" *> pure False]
-    return (Kind Star)
+    value <- choice [rword "True" *> pure True, rword "False" *> pure False]
+    return (BoolLit value)
 
 parseType :: Parser Term
 parseType = try pPi <|> pAExpr
@@ -203,7 +203,7 @@ pAExpr :: Parser Term
 pAExpr = try pApply <|> pAtomExpr
 
 pAtomExpr :: Parser Term
-pAtomExpr = variable <|> parseKind <|> pParen exprParser <|> integer <|> boolean
+pAtomExpr = try variable <|> try parseKind <|> try (pParen exprParser) <|> try integer <|> try boolean
 
 parseKind :: Parser Term
 parseKind = do

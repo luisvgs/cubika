@@ -9,7 +9,6 @@ data Term
     | TmApp Term Term
     | Let String Type Term Term -- let Nat : * = term
     | TmAbs String Type Term -- corresponds to @\x : ty. t@.
-    | Function String Term Type Term
     | TmMatch Term [(Pattern, Term)]
     | Pi String Type Type
     | Kind Kinds
@@ -17,7 +16,7 @@ data Term
     | TyInt
     deriving (Show, Eq)
 
-data Pattern = PInt Int | PBool Bool | Wildcard deriving (Show, Eq)
+data Pattern = PInt Integer | PBool Bool | Wildcard deriving (Show, Eq)
 
 data Kinds = Star | Box  | TrustMe deriving (Show, Eq)
 

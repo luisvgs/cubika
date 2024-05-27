@@ -32,12 +32,18 @@ extendContext :: String -> Type -> Context -> Context
 extendContext = Map.insert
 
 typeof :: Context -> Term -> Either TypeError (Term, Type)
-typeof ctx b@TmTrue                                       = Right (b, TyBool)
-typeof ctx b@TmFalse                                      = Right (b, TyBool)
-typeof ctx b@TyBool                                       = Right (b, TyBool)
-typeof ctx b@(BoolLit b')                                 = Right (b, TyBool)
-typeof ctx i@(TmInt n)                                    = Right (i, TyInt)
-typeof ctx pm@(TmMatch _ _)                               = Right (pm, Kind TrustMe)
+typeof ctx b@TyBool                                       = Right (b, Var "Bool")
+typeof ctx b@(BoolLit b')                                 = Right (b, Var "Bool")
+typeof ctx i@(TmInt n)                                    = Right (i, Kind Star)
+typeof ctx pm@(TmMatch e ((p, t) : branches))                               = do
+    b1_ <- typeof ctx  t
+    let (_, b1) = b1_
+    b2 <- mapM (\(p, t) -> typeof ctx t) branches
+    let branchNtypes = map snd b2
+    if all (== b1) branchNtypes
+    then return $ (pm, b1)
+    else Left $ TypeError ("Match expression has a type error. ")
+
 typeof ctx (Let s t a e)                                  = do
     typeof ctx t
     ta <- typeof ctx a
@@ -46,6 +52,7 @@ typeof ctx (Let s t a e)                                  = do
     te <- typeof ctx (subst s a e)
     let (_, u')                                           = te
     typeof ctx (Pi s t u')
+    -- trace ("typeOf u' " ++ show u' ++ " ") (return ())
     return te
 typeof ctx x@(Var v)                                      = case Map.lookup v ctx of
     Just ty -> Right (x, ty)
@@ -68,8 +75,6 @@ typeof ctx e@(TmApp t1 t2)                                = do
         Pi x at rt -> do
             -- Typechek t2 in the context
             ta' <- typeof ctx t2
-            trace ("typeOf ta " ++ show ta' ++ " ") (return ())
-            trace ("typeOf t2 " ++ show t2 ++ " ") (return ())
             let (_, ta)                                   = ta'
             -- (betaEq x y)?
             -- "Since types can now be arbitrary expression
