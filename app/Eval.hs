@@ -1,5 +1,5 @@
 module Eval where
-import           Ast         (Pattern (..), Term (..), Type (..))
+import           Ast         (Op (..), Pattern (..), Term (..), Type (..))
 import           Data.Map    (Map)
 import qualified Data.Map    as Map
 import           Data.Set    (Set)
@@ -9,32 +9,39 @@ type Context = Map String Term
 
 
 initialCtx :: Context
-initialCtx = Map.fromList [("a", TmInt 3)]
+initialCtx = Map.fromList [("a", TmInt 5), ("x", BoolLit False), ("b", TmInt 4)]
+
+lookfor :: Context -> String -> Term
+lookfor ctx s = case Map.lookup s ctx of
+    Just val -> val
+    Nothing  -> Var ("Nothing")
 
 eval :: Context -> Term -> Term
-eval ctx (Var x) =
-  case Map.lookup x ctx of
-    Just val -> val
-    Nothing  -> Var "Nope"
-eval ctx (TmApp f a) =
+eval ctx (Var x)                 = lookfor ctx x
+eval ctx (TmApp f a)             =
   case eval ctx f of
     TmAbs x _ b -> eval (Map.insert x (eval ctx a) ctx) b
     f'          -> TmApp f' (eval ctx a)
-eval ctx (TmAbs x t b) = TmAbs x t (eval ctx b)
-eval ctx (Let x t e b) =
-  let e' = eval ctx e
-      ctx' = Map.insert x e' ctx
+eval ctx (TmAbs x t b)           = TmAbs x t (eval ctx b)
+eval ctx (BinOp op a b)          = case (op, a, b) of
+    (Add, TmInt(x), TmInt(y))-> TmInt(x + y)
+    (Add, Var(a), Var(b)) -> do
+       let a_                    = lookfor ctx a
+       let b_                    = lookfor ctx b
+       case (a_, b_) of
+           (TmInt(x), TmInt(y)) -> TmInt(x + y)
+eval ctx (Let x t e b)           =
+  let e'                         = eval ctx e
+      ctx'                       = Map.insert x e' ctx
   in eval ctx' b
-
-eval _ t@TmTrue = t
-eval _ t@TmFalse = t
-eval _ t@(TmInt _) = t
-eval _ t@TyBool = t
-eval _ t@TyInt = t
-eval _ t@(BoolLit _) = t
-eval _ t@(Kind _) = t
-
-eval ctx (Pi x k t) = Pi x (eval ctx k) (eval ctx t)
+eval _ t@TmTrue                  = t
+eval _ t@TmFalse                 = t
+eval _ t@(TmInt _)               = t
+eval _ t@TyBool                  = t
+eval _ t@TyInt                   = t
+eval _ t@(BoolLit _)             = t
+eval _ t@(Kind _)                = t
+eval ctx (Pi x k t)              = Pi x (eval ctx k) (eval ctx t)
 
 eval ctx (TmMatch expr branches) =
   trace ("Evaluating MATCH with expr: " ++ show expr ++ " " ++ show branches) $
@@ -45,7 +52,7 @@ eval ctx (TmMatch expr branches) =
       result -> trace ("Pattern match failure: " ++ show result ++ " ---- " ++ show expr) $
           error $ "Pattern match failure: " ++ show expr
     where
-        match _ [] = error "Pattern match failure: no matching pattern found"
+        match _ []               = error "Pattern match failure: no matching pattern found"
         match val ((p, body):bs) = trace ("matching " ++ show val ++ " against: " ++ show p ++ " " ++ show body ++ " " ++ show bs) $
             if patternMatches val p
             then body

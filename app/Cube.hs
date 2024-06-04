@@ -34,7 +34,8 @@ extendContext = Map.insert
 typeof :: Context -> Term -> Either TypeError (Term, Type)
 typeof ctx b@TyBool                                       = Right (b, Var "Bool")
 typeof ctx b@(BoolLit b')                                 = Right (b, Var "Bool")
-typeof ctx i@(TmInt n)                                    = Right (i, Kind Star)
+typeof ctx e@(BinOp Add (Var "a") (Var "b")) = Right(e, Var "Nat")
+typeof ctx i@(TmInt n)                                    = Right (i, Var "Nat")
 typeof ctx pm@(TmMatch e ((p, t) : branches))                               = do
     b1_ <- typeof ctx  t
     let (_, b1) = b1_

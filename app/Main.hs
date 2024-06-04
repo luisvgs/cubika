@@ -29,9 +29,9 @@ repl = do
             Right expr -> print' $ show expr ++ "\n"
 
 
--- foo = run exprParser "let id (A : Type) (x : A) : A = x in let Bool : Type; False : Bool in id Bool False"
+foo = run exprParser "let sum (a : Nat) (b : Nat) : Nat = + a b in sum 3 5;"
 -- foo = run exprParser "idt Bool False;"
-foo = run exprParser "let foo (a : Type) : Bool = match a with | 2 -> True | _ -> False in foo 2"
+-- foo = run exprParser "let foo (a : Type) : Bool = match a with | 2 -> True | _ -> False in foo 2"
 -- foo = run exprParser "let id : forall (a : Type) . a -> a; id a x"
 -- foo = run exprParser "let x : Type = g a; y : Type = f x in h x y"
 -- foo = run exprParser "let Bool : Type;Bool=forall (a : Type) . Bool -> a -> a; False : Bool in False"

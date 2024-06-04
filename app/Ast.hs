@@ -6,6 +6,7 @@ data Term
     | TmInt Integer
     | BoolLit Bool
     | Var String
+    | BinOp Op Term Term
     | TmApp Term Term
     | Let String Type Term Term -- let Nat : * = term
     | TmAbs String Type Term -- corresponds to @\x : ty. t@.
@@ -22,6 +23,7 @@ data Kinds = Star | Box  | TrustMe deriving (Show, Eq)
 
 type Type = Term
 
+data Op = Add | Sub deriving (Show, Eq)
 -- instance Show Term where
 --   show TmTrue = "true"
 --   show TmFalse = "false"

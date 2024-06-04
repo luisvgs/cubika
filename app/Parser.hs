@@ -1,7 +1,8 @@
 module Parser where
 
-import           Ast                            (Kinds (..), Pattern (..),
-                                                 Term (..), Type (..))
+import           Ast                            (Kinds (..), Op (..),
+                                                 Pattern (..), Term (..),
+                                                 Type (..))
 import           Control.Monad                  (void)
 import           Control.Monad.Combinators.Expr
 import           Cube
@@ -63,13 +64,22 @@ parseWildcard :: Parser Pattern
 parseWildcard = do
     symbol "_"
     return $ Wildcard
--- Get rid of these:
+-- Get rid of these later:
 pPBool :: Parser Pattern
 pPBool = (rword "True" *> return (PBool True)) <|> (rword "False" *> return (PBool False))
 
 pPInt :: Parser Pattern
 pPInt = PInt <$> L.decimal
 
+
+pBinOp :: Parser Term
+pBinOp = do
+    op <- (Add <$ symbol "+") <|> (Sub <$ symbol "-")
+    spaces
+    x <- pAtomExpr
+    spaces
+    y <- pAtomExpr
+    return $ BinOp op x y
 
 identifier :: Parser String
 identifier = (lexeme . try) (p >>= check)
@@ -164,7 +174,7 @@ pParen :: Parser a -> Parser a
 pParen = between (symbol "(") (symbol ")")
 
 exprParser :: Parser Term
-exprParser = try pLet <|> try pPi <|> try pLam <|> try pApply <|> try pAtomExpr <|> try parseMatch
+exprParser = try pBinOp <|> try pLet <|> try pPi <|> try pLam <|> try pApply <|> try pAtomExpr <|> try parseMatch
 
 pPi :: Parser Term
 pPi = try pPiQuant <|> pPiArrow
