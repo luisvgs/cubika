@@ -5,7 +5,7 @@
 \__/\_,_/_.__/_/_/\_\\_,_/ 
                            
 ```
-## A (semi) functional programming language with dependent types.
+### A (semi) functional programming language with dependent types.
 # Examples
 
 ### Pattern matching
